@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>SG2 Waterjet Handling Simulator — WebXR (Meta Quest)</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#0b141c;font-family:"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#e6ebe9}
+  #c{display:block;width:100%;height:100%;touch-action:none}
+  #hud{position:fixed;left:10px;bottom:8px;width:min(60vw,640px);height:auto;border:1px solid #2f4a4388;border-radius:8px;background:#0b141c55;opacity:.85}
+  #top{position:fixed;left:10px;top:8px;font-size:12px;color:#9fb3ad;pointer-events:none}
+  #top b{color:#e6ebe9;font-size:14px}
+  #vr{position:fixed;right:10px;top:8px;padding:10px 16px;border-radius:8px;border:1px solid #2f9a77;background:#1f6b52;color:#fff;font-size:14px;font-weight:600}
+  #vr[disabled]{background:#333;border-color:#555;color:#999}
+  #help{position:fixed;right:10px;top:52px;width:250px;font-size:11px;line-height:1.45;color:#b7c8c2;background:#16242acc;border:1px solid #2f4a43;border-radius:6px;padding:7px 9px}
+  #help b{color:#e6ebe9}
+  #sc{position:fixed;left:10px;top:92px;display:none;flex-direction:column;gap:4px;max-height:70vh;overflow:auto}
+  body.menu #sc{display:flex} body.menu #help{display:block} #help{display:none}
+  #menuBtn{position:fixed;left:10px;top:56px;padding:6px 12px;border-radius:6px;border:1px solid #2f9a77;background:#16242a;color:#d6e2de;font-size:13px}
+  #sc button,#sc select{border:1px solid #2f4a43;background:#16242a;color:#d6e2de;border-radius:6px;padding:6px 9px;font-size:12px;text-align:left}
+  #sc button.on{background:#1f6b52;border-color:#2f9a77;color:#fff}
+  @media (max-width:800px){body.menu #help{display:none}}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="top"><b>SG2 Waterjet Handling Simulator</b><br>MARIP 1202 twin-waterjet catamaran · 11.5 × 6.41 m · 22.5–33 t · 2 × 119 kW · Alamarin-Jet Sigma (Twin Lever / E-Helm / 3-axis Joystick) · bow thrusters 210/240 kgf</div>
+<button id="vr" disabled>Checking VR…</button>
+<button id="menuBtn">☰ Menu (Tab)</button>
+<div id="sc">
+  <button data-s="0" class="on">1 · Berthing alongside</button>
+  <button data-s="1">2 · Buoy slalom</button>
+  <button data-s="2">3 · Station keeping (wind + current)</button>
+  <button data-s="3">4 · Pivot turn in box</button>
+  <button data-s="4">5 · Free run</button>
+  <button data-s="5">6 · AD Marina — berth G41</button>
+  <select id="wind"><option value="0">Wind: calm</option><option value="10" selected>Wind: 10 kn</option><option value="20">Wind: 20 kn</option><option value="30">Wind: 30 kn</option></select>
+  <select id="windDir"><option value="0">Wind from N (000)</option><option value="45">Wind from NE (045)</option><option value="90">Wind from E (090)</option><option value="135">Wind from SE (135)</option><option value="180">Wind from S (180)</option><option value="225">Wind from SW (225)</option><option value="270">Wind from W (270)</option><option value="300" selected>Wind from WNW (300)</option><option value="315">Wind from NW (315)</option></select>
+  <select id="cur"><option value="0">Current: none</option><option value="0.3" selected>Current: 0.3 kn</option><option value="0.6">Current: 0.6 kn</option><option value="1.0">Current: 1.0 kn</option></select>
+  <select id="curDir"><option value="0">Current sets N (000)</option><option value="45">Current sets NE</option><option value="90">Current sets E (090)</option><option value="135">Current sets SE</option><option value="180">Current sets S (180)</option><option value="200" selected>Current sets SSW (200)</option><option value="270">Current sets W (270)</option><option value="315">Current sets NW</option></select>
+  <select id="disp"><option value="22.46">Displacement: 22.5 t (Sep-26 trials)</option><option value="33" selected>Displacement: 33 t (max approved)</option></select>
+  <select id="mode"><option value="0" selected>Control: Twin Lever + nozzle (manual)</option><option value="1">Control: Sigma 3-axis Joystick</option><option value="2">Control: Joystick + Position Hold</option></select>
+  <select id="sea"><option value="0.0">Sea: flat</option><option value="0.3" selected>Sea: 0.3 m</option><option value="0.8">Sea: 0.8 m</option></select>
+  <button id="cam">Camera: helm</button>
+  <button id="rst">Reset scenario (R)</button>
+  <button id="auto">AUTO demo: off (T)</button>
+  <button id="cabBtn" onclick="setCabin(!CABIN)">Temporary cabin on/off (B)</button>
+</div>
+<div id="help"><b>Quest controllers</b><br>
+Left stick ↕ = PORT combinator (fwd = ahead, back = astern/bucket)<br>
+Right stick ↕ = STBD combinator<br>
+Right stick ↔ = steering nozzles ±30°<br>
+Left stick ↔ = bow thrusters<br>
+Right grip = link both levers · Right trigger = nozzle centre<br><b>Y = menu (scenario, control mode, wind, current, spot…) · hold LEFT GRIP + left stick = walk on deck, right stick = snap turn</b><br>Left trigger cycles Joystick ⇄ Position Hold · B (keyboard) / menu = remove the temporary cabin<br>Joystick mode: right stick = sway/surge · left stick ↔ = twist (rotate)<br>
+A = standing spot (fwd / stern / port / stbd) · B = reset · X = next scenario · left stick click = pause · right stick click = AUTO demo<br>
+<b>Marina scenario</b>: schematic of Abu Dhabi Marine (Breakwater) — pontoons A–H, entrance from the north; G41 is a finger berth on the west side of pontoon G. Layout is representative, not surveyed.<br><b>Keyboard</b>: W/S both levers · Q/A port · E/D stbd · ←/→ nozzle · Z/C bow thruster · Space all stop · V camera · R reset · N next · M joystick mode · H position hold · I/K/J/L/U/O joystick surge/sway/twist<br>
+<b>Waterjet notes</b>: no steering without flow — an idle jet gives no rudder effect. The reverse deflector keeps the lateral sense of the nozzle, so astern the stern walks AWAY from the nozzle side. One jet ahead + one astern with nozzles deflected = pure sway (the joystick's trick); with nozzles amidships = pure pivot. Bow thrusters lose effect above ~3 kn.<br><b>Calibrated to trials</b>: 6.2 kn max @22.5 t · 360° in ~58 s from 6.5 kn, final dia ~30 m · crash stop ~6 s / 9 m · nozzle 4°/s (yard steering test) · engine/bucket lag 1.5 s.</div>
+<canvas id="hud" width="1024" height="388"></canvas>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ================================================================ SCENE
+const canvas=document.getElementById('c');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)); renderer.xr.enabled=true; renderer.xr.setReferenceSpaceType('local-floor');
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0xa9c6dd); scene.fog=new THREE.Fog(0xa9c6dd,250,900);
+const camera=new THREE.PerspectiveCamera(70,1,0.05,1500);
+scene.add(new THREE.HemisphereLight(0xffffff,0x3a5a6a,0.9));
+const sun=new THREE.DirectionalLight(0xfff1d6,1.0); sun.position.set(200,300,100); scene.add(sun);
+
+const mat=(c,o={})=>new THREE.MeshStandardMaterial(Object.assign({color:c,roughness:0.6,metalness:0.1},o));
+const M={navy:mat(0x1a2450,{roughness:.8}),white:mat(0xeef0ec),struct:mat(0xe6e8e4),black:mat(0x161819,{roughness:.8}),grate:mat(0xb9895a,{roughness:.95}),alu:mat(0xb9c2c7,{metalness:.7,roughness:.35}),
+  yellow:mat(0xd7e023),cabDark:mat(0x1c2a33,{roughness:.15,metalness:.4}),dome:mat(0xf2f2ee),orange:mat(0xe86a1e),red:mat(0xc9282d),green:mat(0x1fa34a),
+  quay:mat(0x9a9488,{roughness:.95}),quayTop:mat(0xb8b2a4,{roughness:.95}),fender:mat(0x222),buoyR:mat(0xd42a2a),buoyG:mat(0x1f9a4a),buoyY:mat(0xe6c31a),tug:mat(0x3a4d7a),
+  jet:mat(0x8899aa),ring:mat(0x2fd39a,{transparent:true,opacity:.6}),box:mat(0xffd54a,{transparent:true,opacity:.5})};
+const hullMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.5});
+
+// ================================================================ BOAT GEOMETRY (from GA MARIP1202_100_001_F, simplified)
+const LOA=11.47,BOA=6.41,D=2.26,DR=0.97,BOOT=1.25,HB=2.0,b=1.0,TUN=BOA-2*HB,HZ=BOA/2-b,MID=5.735;
+const HBT=[[0,1.0],[8.3,1.0],[9,0.943],[9.5,0.85],[10,0.71],[10.3,0.609],[10.6,0.49],[10.9,0.351],[11.1,0.245],[11.3,0.135],[11.47,0]];
+function hbt(x){if(x<=0)return 1;if(x>=LOA)return 0;for(let i=1;i<HBT.length;i++){if(x<=HBT[i][0]){const [x0,h0]=HBT[i-1],[x1,h1]=HBT[i];return h0+(h1-h0)*(x-x0)/(x1-x0);}}return 0;}
+const setback=y=>0.38*THREE.MathUtils.clamp((y-0.35)/1.91,0,1), ybot=x=>x>=1.0?0:0.686+(0.85-0.686)*(1-x/1.0);
+const boat=new THREE.Group(); scene.add(boat);            // boat frame: +x fwd, +z stbd, origin at midship on baseline
+const hullG=new THREE.Group(); hullG.position.x=-MID; boat.add(hullG);
+const box=(w,h,d,m,x,y,z,g=hullG)=>{const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);g.add(o);return o;};
+const cyl=(rt,rb,h,m,x,y,z,g=hullG,seg=16)=>{const o=new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,seg),m);o.position.set(x,y,z);g.add(o);return o;};
+const sph=(r,m,x,y,z,g=hullG)=>{const o=new THREE.Mesh(new THREE.SphereGeometry(r,20,14),m);o.position.set(x,y,z);g.add(o);return o;};
+function ring(x){const yb=ybot(x),hb=y=>hbt(x+setback(y)); const half=[[0,yb]];
+  for(let i=1;i<=3;i++){const a=i/3*Math.PI/2,y=yb+0.1*(1-Math.cos(a));half.push([hb(y)-0.1+0.1*Math.sin(a),y]);}
+  half.push([hb(1.2),1.2],[hb(D-0.12),D-0.12]); for(let i=1;i<=3;i++){const a=i/3*Math.PI/2,y=D-0.12+0.12*Math.sin(a);half.push([Math.max(0,hb(y)-0.12+0.12*Math.cos(a)),y]);} half.push([0,D]);
+  half.forEach(p=>p[0]=Math.max(0,p[0])); const pts=[...half]; for(let i=half.length-2;i>0;i--)pts.push([-half[i][0],half[i][1]]); return pts;}
+const nozzles=[];
+function demihull(zc){const xs=[];for(let x=0;x<0.999;x+=0.2)xs.push(x);xs.push(0.999,1.001);for(let x=1.2;x<8.3;x+=0.4)xs.push(x);for(let x=8.3;x<=LOA-0.02;x+=0.12)xs.push(x);xs.push(LOA-0.002);
+  const rings=xs.map(x=>({x,pts:ring(x)})),R=rings[0].pts.length,pos=[],col=[],idx=[];
+  rings.forEach(r=>r.pts.forEach(([z,y])=>{pos.push(r.x,y,z+zc);if(y<BOOT)col.push(0.10,0.14,0.30);else col.push(0.93,0.93,0.93);}));
+  for(let i=0;i<rings.length-1;i++)for(let j=0;j<R;j++){const a=i*R+j,q=i*R+(j+1)%R,c=(i+1)*R+j,d=(i+1)*R+(j+1)%R;idx.push(a,c,q,q,c,d);}
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));g.setIndex(idx);g.computeVertexNormals();hullG.add(new THREE.Mesh(g,hullMat));
+  const sh=new THREE.Shape();rings[0].pts.forEach(([z,y],i)=>i?sh.lineTo(z,y):sh.moveTo(z,y));sh.closePath();const tg=new THREE.ShapeGeometry(sh);tg.rotateY(-Math.PI/2);const tp=new THREE.Mesh(tg,M.white);tp.position.set(0.001,0,zc);hullG.add(tp);
+  box(0.02,0.686,HB-0.02,M.navy,1.0,0.343,zc); const so=zc>0?1:-1;
+  // waterjet: duct + steering nozzle (rotates with δ) + bucket
+  cyl(0.2,0.2,0.9,M.jet,0.5,0.47,zc).rotation.z=Math.PI/2;
+  const nz=new THREE.Group(); nz.position.set(-0.05,0.45,zc); const n1=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.2,0.4,16),M.alu); n1.rotation.z=Math.PI/2; n1.position.x=-0.2; nz.add(n1);
+  const bk=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.34,0.44),M.black); bk.position.set(-0.45,0.28,0); nz.add(bk); nz.userData.bucket=bk; hullG.add(nz); nozzles.push(nz);
+  // deck items
+  const lr=cyl(0.28,0.28,0.8,M.dome,0.18,D+0.55,zc+so*0.45); lr.rotation.x=Math.PI/2; box(0.5,0.85,0.5,M.white,1.05,D+0.425,zc);
+  box(1.75,1.15,0.62,M.white,3.72,D+0.7,zc+so*0.64); box(0.7,0.15,0.67,M.white,6.9,D+0.075,zc+so*0.55);
+  box(1.8,0.12,1.06,M.struct,6.08,D+0.06,zc); box(1.64,0.1,0.9,M.black,6.08,D+0.1,zc);
+  if(so>0){box(0.5,1.0,0.5,M.white,9.3,D+0.5,zc+0.15); cyl(0.15,0.15,1.3,M.white,8.65,D+0.65,zc-0.3);} else box(0.9,1.0,0.85,M.white,8.9,D+0.5,zc-0.05);
+  for(let x=1;x<9;x+=1.6)cyl(0.02,0.02,0.9,M.alu,x,D+0.45,zc+so*(hbt(x)-0.08));
+}
+demihull(-HZ); demihull(HZ);
+// platform, beams, fwd beam, cabin, mast, domes, gantry (simplified)
+box(7.45,0.06,2.08,M.grate,4.525,D+0.02,0); box(7.45,0.14,2.08,M.struct,4.525,D-0.08,0);
+[[1.35,1.8,0.7],[4.1,4.6,0.7],[7.85,8.5,0.95]].forEach(([x0,x1,dp])=>{box(x1-x0,dp,TUN+0.3,M.struct,(x0+x1)/2,D-dp/2,0);});
+box(0.5,0.55,0.5,M.white,8.2,D+0.3,0); box(0.3,0.5,0.3,M.black,8.75,D-0.7,0);
+const cabG=new THREE.Group(); hullG.add(cabG); let CABIN=true; function setCabin(v){CABIN=v;cabG.visible=v;}
+{const CB0=4.8,CBL=3.0,CBW=2.0,p=new THREE.Shape();p.moveTo(0,0);p.lineTo(CBL,0);p.lineTo(CBL,0.95);p.lineTo(CBL-0.45,2.05);p.lineTo(0.35,2.05);p.lineTo(0,1.15);p.closePath();
+ const g=new THREE.ExtrudeGeometry(p,{depth:CBW,bevelEnabled:false});g.translate(0,0,-CBW/2);const c=new THREE.Mesh(g,M.yellow);c.position.set(CB0,D+0.04,0);cabG.add(c);
+ const ws=box(0.02,1.05,CBW-0.3,M.cabDark,CB0+CBL-0.2,D+1.55,0,cabG);ws.rotation.z=-0.39;[-1,1].forEach(s=>{box(0.85,0.6,0.02,M.cabDark,CB0+2.2,D+1.55,s*(CBW/2+0.005),cabG);box(0.75,0.6,0.02,M.cabDark,CB0+1.2,D+1.55,s*(CBW/2+0.005),cabG);});box(0.9,0.35,0.6,M.white,CB0+1.1,D+2.25,0.2,cabG);}
+[-1,1].forEach(s=>{const z=s*(HZ-0.25);cyl(0.12,0.16,1.0,M.white,1.8,D+0.5,z);sph(s>0?0.62:0.55,M.dome,1.8,D+1.6,z);});
+// ===== APPROVED AS-BUILT STERN (tow-fish foundation) AND MAST — shared by the simulator and the model =====
+// P: parent group in "x from transom, y above baseline, z +stbd" coordinates. Requires THREE, box(w,h,d,m,x,y,z,P), cyl(rt,rb,h,m,x,y,z,P,seg), M
+function buildSternAndMast(P,box,cyl,M,D,HZ,opts){opts=opts||{};
+  const mem=(p,q,sz,m)=>{sz=sz||0.08;m=m||M.struct;const a=new THREE.Vector3(...p),bq=new THREE.Vector3(...q);const L=a.distanceTo(bq);const o=new THREE.Mesh(new THREE.BoxGeometry(sz,sz,L),m);o.position.copy(a).add(bq).multiplyScalar(0.5);o.lookAt(bq);o.castShadow=true;P.add(o);return o;};
+  const rbox=(cx,cy,cz,L,H,W,m,rz)=>{const o=box(L,H,W,m,cx,cy,cz,P);o.rotation.z=rz||0;return o;};
+  // ---- gantry frame in the tunnel at the transom
+  const ZW=1.12,YT=D+0.85,XA=0.12,XF=2.05,YL=1.45;
+  [-ZW,ZW].forEach(z=>{mem([XA,YT,z],[XF,YT,z]); mem([XA,YL,z],[XA,YT,z]); mem([XF,D-0.1,z],[XF,YT,z]); mem([XA,YT,z],[XF,D-0.05,z]); mem([XA,YL,z],[1.4,D-0.2,z],0.06);});
+  [XA,(XA+XF)/2,XF].forEach(x=>mem([x,YT,-ZW],[x,YT,ZW])); mem([XA,YL,-ZW],[XA,YL,ZW]);
+  [-ZW,ZW].forEach(z=>box(0.3,0.12,0.1,M.struct,XA,YL,z+(z>0?0.05:-0.05),P));
+  // ---- sloped roller cradle inside the frame
+  const W=1.30,xu=2.7,yu=D-0.40,xl=-0.35,yl=1.55,ang=Math.atan2(yu-yl,xu-xl),Lc=Math.hypot(xu-xl,yu-yl);
+  const CP=(sv,up)=>[xl+sv*Math.cos(ang)-up*Math.sin(ang), yl+sv*Math.sin(ang)+up*Math.cos(ang)];
+  const roller=(x,y,z)=>{const pts=[[0.055,0],[0.042,0.04],[0.04,0.08],[0.042,0.12],[0.055,0.16]].map(([r,t])=>new THREE.Vector2(r,t));const o=new THREE.Mesh(new THREE.LatheGeometry(pts,14),M.dome);o.rotation.x=Math.PI/2;o.position.set(x,y,z);P.add(o);};
+  const Ls=[0.55,0.55,0.55,0.55],gaps=[0.30,0,0.30,0]; let sv=0;
+  Ls.forEach((Li,i)=>{ if(gaps[i]>0){const sb=sv+gaps[i]/2; let [bx,by]=CP(sb,-0.02); rbox(bx,by,0,0.12,0.12,1.42,M.struct,ang); [-0.28,0.12].forEach(z=>{const [px,py]=CP(sb,0.10); roller(px,py,z); const [qx,qy]=CP(sb,0.03); rbox(qx,qy,z+0.08,0.14,0.06,0.20,M.struct,ang);}); sv+=gaps[i];}
+    const s1=sv+Li,sc=(sv+s1)/2; const [cx,cy]=CP(sc,0); rbox(cx,cy,0,Li,0.04,W,M.grate,ang);
+    [-0.72,0.72].forEach(z=>{rbox(cx,cy,z,Li+0.10,0.14,0.05,M.struct,ang); let [ax,ay]=CP(sv-0.02,0.03); rbox(ax,ay,z,0.16,0.10,0.05,M.struct,ang+Math.PI/4); [ax,ay]=CP(s1+0.02,0.03); rbox(ax,ay,z,0.16,0.10,0.05,M.struct,ang-Math.PI/4);});
+    let [ex,ey]=CP(sv,-0.03); rbox(ex,ey,0,0.06,0.06,1.42,M.struct,ang); [ex,ey]=CP(s1,-0.03); rbox(ex,ey,0,0.06,0.06,1.42,M.struct,ang); sv=s1;});
+  [-0.80,0.80].forEach(z=>{const [cx,cy]=CP(Lc/2,0.06); rbox(cx,cy,z,Lc+0.1,0.14,0.03,M.struct,ang);
+    [0.5,1.6,2.6].forEach(sa=>{const [px,py]=CP(sa,0.1); mem([px,py,z],[px-0.1,YT,z>0?ZW:-ZW],0.05);});});
+  // support bars from the hull deck tops down to the cradle rails and the low beam
+  [-1,1].forEach(so=>{const zi=so*(HZ-0.95),zr=so*0.80; [[0.35,0.6],[1.45,1.7],[2.55,2.8]].forEach(([sa,xd])=>{const [px,py]=CP(sa,0.12); mem([xd,D+0.02,zi],[px,py,zr],0.05);}); mem([0.05,D+0.02,zi],[XA,YL,so*ZW],0.05);});
+  // aluminium ladder
+  [-0.22,0.22].forEach(z=>mem([1.3,YT,z],[0.9,D-0.3,z],0.04,M.alu)); for(let k=0;k<5;k++){const t=k/4; mem([1.3-0.4*t,YT-(YT-(D-0.3))*t,-0.22],[1.3-0.4*t,YT-(YT-(D-0.3))*t,0.22],0.03,M.alu);}
+  // aluminium track and carriage on the stbd inboard deck edge
+  box(2.8,0.12,0.18,M.alu,1.3,D+0.08,HZ-0.89,P); box(0.5,0.12,0.22,M.alu,1.15,D+0.2,HZ-0.89,P);
+  // ---- mast (as-built): shelf, wedge pedestal, horns, Peplink tubes, three gusseted spreaders with fittings, stays
+  const MX=opts.MX||3.3, MB=D+0.35;
+  box(1.4,0.07,1.8,M.white,MX,D+0.315,0,P);
+  for(let i=0;i<6;i++){const t=i/6,r0=0.55-0.35*t,r1=0.55-0.35*(t+1/6); box(r0+r1,0.8/6,r0+r1,M.white,MX,MB+0.8*(t+1/12),0,P);}
+  [-0.7,0.7].forEach(z=>{cyl(0.06,0.06,1.9,M.white,MX-0.1,MB+0.95,z,P,12); cyl(0.04,0.04,0.12,M.white,MX-0.1,MB+1.96,z,P,10);});
+  [-0.35,0.35].forEach(z=>{const h=cyl(0.14,0.07,0.32,M.white,MX+0.45,MB+0.12,z,P,14); h.rotation.z=-Math.PI/2+0.3;});
+  cyl(0.06,0.09,4.9,M.white,MX,MB+0.8+2.45,0,P,16); cyl(0.05,0.06,5.6,M.white,MX,MB+0.8+2.8,0,P,12);
+  const spreader=(y,w)=>{[-1,1].forEach(sd=>{ // wedge plate with lightening holes + top flange + tip fitting
+    const sh=new THREE.Shape(); sh.moveTo(0,-0.16); sh.lineTo(w/2,-0.05); sh.lineTo(w/2,0.05); sh.lineTo(0,0.16); sh.closePath();
+    [[0.28,0],[0.62,0]].forEach(([hx])=>{const hole=new THREE.Path(); hole.absarc(hx,0,0.055,0,Math.PI*2,true); sh.holes.push(hole);});
+    const g=new THREE.ExtrudeGeometry(sh,{depth:0.08,bevelEnabled:false}); g.rotateY(-Math.PI/2); const o=new THREE.Mesh(g,M.white); o.position.set(MX+0.04,y,0); o.scale.z=sd; P.add(o);
+    box(0.06,0.06,w/2,M.white,MX,y+0.19,sd*w/4,P); box(0.16,0.14,0.16,M.white,MX,y,sd*w/2,P);});};
+  const Y1=MB+2.3,Y2=MB+3.5,Y3=MB+4.75; spreader(Y1,2.6); spreader(Y2,2.4); spreader(Y3,2.2);
+  const light=(x,y,z,m)=>cyl(0.05,0.05,0.12,m,x,y,z,P,10);
+  [-1,1].forEach(sd=>light(MX,Y1+0.2,sd*1.3,M.red));
+  box(0.5,0.05,0.5,M.white,MX,Y1+0.57,0,P); cyl(0.28,0.3,0.16,M.white,MX,Y1+0.68,0,P,32); cyl(0.2,0.2,0.05,M.white,MX,Y1+0.79,0,P,24);
+  cyl(0.12,0.12,0.25,M.white,MX+0.15,Y2-0.35,-1.05,P,16); {const s=new THREE.Mesh(new THREE.SphereGeometry(0.12,16,12),M.white); s.position.set(MX+0.15,Y2-0.42,-1.05); P.add(s);}
+  cyl(0.12,0.12,0.25,M.black,MX+0.15,Y2-0.35,0.95,P,16); {const s=new THREE.Mesh(new THREE.SphereGeometry(0.12,16,12),M.black); s.position.set(MX+0.15,Y2-0.42,0.95); P.add(s);}
+  box(0.2,0.15,0.2,M.black,MX,Y2+0.22,-1.1,P); cyl(0.03,0.03,0.3,M.white,MX,Y2+0.35,1.0,P,8); cyl(0.07,0.07,0.12,M.white,MX,Y2+0.56,1.0,P,12);
+  [-1,1].forEach(sd=>light(MX,Y2+0.2,sd*1.2,M.red));
+  box(0.4,0.3,0.4,M.white,MX,Y3+0.3,0,P); const arr=box(0.14,0.18,1.3,M.white,MX,Y3+0.55,0,P); arr.rotation.y=0.35;
+  box(0.15,0.1,0.36,M.white,MX+0.27,Y3,0,P); box(0.05,0.12,0.3,M.alu,MX+0.37,Y3,0,P);
+  cyl(0.06,0.06,0.4,M.white,MX,Y3+0.9,0,P,10); cyl(0.09,0.09,0.22,M.white,MX,Y3+1.21,0,P,12); {const s=new THREE.Mesh(new THREE.SphereGeometry(0.09,14,10),M.white); s.position.set(MX,Y3+1.32,0); P.add(s);}
+  cyl(0.16,0.16,0.5,M.white,MX-0.3,Y3-0.65,0.35,P,16);
+  [-0.95,-0.6,-0.25,0.25,0.6,0.95,1.1].forEach(z=>cyl(0.012,0.012,1.6,M.alu,MX-0.05,Y3+1.0,z,P,6));
+  [-1,1].forEach(sd=>light(MX,Y3+0.2,sd*1.1,M.red));
+  [-1,1].forEach(sd=>[[Y1,2.6,MX+1.6],[Y3,2.2,MX-1.8],[Y2,2.4,MX+0.2]].forEach(([y,w,xd])=>mem([MX,y,sd*w/2],[xd,D+0.05,sd*(HZ-0.6)],0.02,M.alu)));
+  return {MX,MB,Y3};
+}
+
+const MASTINFO=buildSternAndMast(hullG,box,cyl,M,D,HZ,{MX:3.3}); const MSx=MASTINFO.MX;
+// helm position: stand on the platform just aft of the cabin looking forward over its roof (for VR); rig origin = deck at floor level
+const rig=new THREE.Group(); rig.position.set(8.0-MID,D+0.06,0); rig.rotation.y=Math.PI/2; boat.add(rig); rig.add(camera);
+// walkable deck areas (x from transom, z athwart): central platform, port & stbd hull decks, fwd cross-beam top
+const DECKS=[[2.1,8.25,-1.04,1.04],[0.3,10.4,-HZ-0.95,-HZ+0.95],[0.3,10.4,HZ-0.95,HZ+0.95],[7.85,8.5,-BOA/2+0.2,BOA/2-0.2]];
+function onDeck(xT,z){return DECKS.some(([a,b2,c,d])=>xT>=a&&xT<=b2&&z>=c&&z<=d);}
+let walkYaw=0; // snap-turn accumulator (applied to rig)
+function walk(dx,dz,dt){ // dx,dz in the user's view frame: forward & right, metres/s
+  const head=new THREE.Vector3(); camera.getWorldDirection(head); const boatQ=boat.getWorldQuaternion(new THREE.Quaternion()).invert(); head.applyQuaternion(boatQ); head.y=0; if(head.lengthSq()<1e-4)return; head.normalize();
+  const right=new THREE.Vector3(-head.z,0,head.x); const mv=head.multiplyScalar(dx*dt).add(right.multiplyScalar(dz*dt));
+  // rig is in boat coords (x fwd from midship, z stbd); the camera sits in rig-local coords, so move the rig itself
+  const nx=rig.position.x+mv.x, nz=rig.position.z+mv.z; const xT=nx+MID;
+  if(onDeck(xT,nz)){rig.position.x=nx;rig.position.z=nz;} else if(onDeck(xT,rig.position.z))rig.position.x=nx; else if(onDeck(rig.position.x+MID,nz))rig.position.z=nz;}
+// wake foam sprites
+const foamTex=(()=>{const cv=document.createElement('canvas');cv.width=cv.height=64;const g=cv.getContext('2d');const gr=g.createRadialGradient(32,32,2,32,32,32);gr.addColorStop(0,'rgba(255,255,255,0.9)');gr.addColorStop(1,'rgba(255,255,255,0)');g.fillStyle=gr;g.fillRect(0,0,64,64);return new THREE.CanvasTexture(cv);})();
+const FOAM=[]; for(let i=0;i<80;i++){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:foamTex,transparent:true,opacity:0,depthWrite:false}));sp.scale.set(2,2,1);scene.add(sp);FOAM.push({sp,life:0,vx:0,vz:0});}
+let foamI=0; function spawnFoam(wx,wz,vx,vz,str){const f=FOAM[foamI++%FOAM.length];f.sp.position.set(wx,0.05,wz);f.life=1;f.vx=vx;f.vz=vz;f.str=str;}
+
+// ================================================================ SEA
+const SEG=72,SW=520; const seaGeo=new THREE.PlaneGeometry(SW,SW,SEG,SEG); seaGeo.rotateX(-Math.PI/2);
+const sea=new THREE.Mesh(seaGeo,new THREE.MeshStandardMaterial({color:0x1f5f74,roughness:.35,metalness:.25,transparent:true,opacity:.92})); scene.add(sea);
+let Hs=0.3; const WV=[{a:1,k:0.45,dx:0.8,dz:0.6,w:2.1},{a:0.5,k:0.9,dx:0.3,dz:-0.95,w:2.9},{a:0.3,k:1.6,dx:-0.6,dz:0.8,w:3.9}];
+const eta=(x,z,t)=>{let e=0;for(const w of WV)e+=w.a*Hs*0.5*Math.cos(w.k*(w.dx*x+w.dz*z)-w.w*t);return e;};
+function updateSea(t,cx,cz){const gx=Math.round(cx/(SW/SEG))*(SW/SEG),gz=Math.round(cz/(SW/SEG))*(SW/SEG);sea.position.set(gx,0,gz);const pa=seaGeo.attributes.position;
+  for(let i=0;i<pa.count;i++){pa.setY(i,eta(pa.getX(i)+gx,pa.getZ(i)+gz,t));}pa.needsUpdate=true;seaGeo.computeVertexNormals();}
+
+// ================================================================ HARBOUR (world: +x east, −z north, y up)
+const obstacles=[]; // {type:'aabb',x0,x1,z0,z1} or {type:'circle',x,z,r}
+function quay(x0,x1,z0,z1,h=1.6){const m=box(x1-x0,h+3,z1-z0,M.quay,(x0+x1)/2,(h-3)/2,(z0+z1)/2,scene);const t=box(x1-x0,0.05,z1-z0,M.quayTop,(x0+x1)/2,h+0.02,(z0+z1)/2,scene);obstacles.push({type:'aabb',x0,x1,z0,z1});
+  for(let x=x0+3;x<x1;x+=6){const bl=cyl(0.15,0.18,0.5,M.black,x,h+0.25,z1-0.8,scene);}}
+quay(-140,140,-75,-60);            // north quay (berth face at z=−60)
+quay(-140,-125,-75,110);           // west quay
+quay(60,140,60,75);               // south-east breakwater
+const fenders=[]; for(let x=-2;x<=24;x+=4){const f=cyl(0.35,0.35,1.4,M.fender,x,0.4,-59.7,scene);f.rotation.x=0;}
+// berth marking on quay face and top (x 0–22)
+box(22,0.06,3,M.box,11,1.65,-63,scene); box(22,1.3,0.06,M.box,11,0.9,-59.6,scene);
+// moored tug as obstacle
+{const t=box(22,3.2,7,M.tug,-80,0.6,-52,scene);box(8,3,5,M.white,-84,3.6,-52,scene);obstacles.push({type:'aabb',x0:-91,x1:-69,z0:-55.5,z1:-48.5});}
+// slalom gates: pairs [x,z] centre, heading, width 14 m
+const gates=[[0,20],[8,60],[-6,100],[10,140],[0,180]].map(([x,z],i)=>({x,z,w:14,passed:false}));
+gates.forEach(g=>{const bR=cyl(0.5,0.4,1.6,M.buoyR,g.x-g.w/2,0.5,g.z,scene);const bG=cyl(0.5,0.4,1.6,M.buoyG,g.x+g.w/2,0.5,g.z,scene);obstacles.push({type:'circle',x:g.x-g.w/2,z:g.z,r:0.6},{type:'circle',x:g.x+g.w/2,z:g.z,r:0.6});g.mR=bR;g.mG=bG;});
+// station-keeping ring
+const SK={x:70,z:20,r:3}; const skRing=new THREE.Mesh(new THREE.TorusGeometry(SK.r,0.12,8,48),M.ring); skRing.rotation.x=Math.PI/2; skRing.position.set(SK.x,0.3,SK.z); scene.add(skRing);
+const skPole=cyl(0.1,0.1,3,M.buoyY,SK.x,1.5,SK.z-30,scene); // heading reference pole 30 m north
+// pivot box 18 × 18 m
+const PB={x:-40,z:40,s:18}; [[-1,-1],[1,-1],[1,1],[-1,1]].forEach(([a,c])=>cyl(0.3,0.3,1.4,M.buoyY,PB.x+a*PB.s/2,0.5,PB.z+c*PB.s/2,scene));
+const pbLines=new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([[-1,-1],[1,-1],[1,1],[-1,1]].map(([a,c])=>new THREE.Vector3(PB.x+a*PB.s/2,0.15,PB.z+c*PB.s/2))),new THREE.LineBasicMaterial({color:0xffd54a})); scene.add(pbLines);
+
+// ---- Marina: schematic layout (Abu Dhabi Marine, Breakwater) — pontoons A–H, finger berths, berth G41 assigned to SG2
+const MAR={x0:175,x1:505,z0:-30,z1:260,ent:[320,364]}; // basin; entrance in the north wall between x 290–330
+quay(MAR.x0-15,MAR.x0,MAR.z0-15,MAR.z1+15,1.2); quay(MAR.x1,MAR.x1+15,MAR.z0-15,MAR.z1+15,1.2); quay(MAR.x0,MAR.x1+15,MAR.z1,MAR.z1+15,1.2);
+quay(MAR.x0,MAR.ent[0],MAR.z0-15,MAR.z0,1.2); quay(MAR.ent[1],MAR.x1,MAR.z0-15,MAR.z0,1.2);
+// entrance lights
+cyl(0.3,0.3,4,M.buoyR,MAR.ent[0]-1,2,MAR.z0-1,scene); cyl(0.3,0.3,4,M.buoyG,MAR.ent[1]+1,2,MAR.z0-1,scene);
+// Marina Mall + Marina Eye landmark on the east shore
+box(70,28,60,M.white,MAR.x1+60,14,60,scene); {const eye=new THREE.Mesh(new THREE.TorusGeometry(25,1.2,8,40),M.alu);eye.position.set(MAR.x1+30,30,-10);scene.add(eye);cyl(0.8,0.8,30,M.alu,MAR.x1+30,15,-10,scene);}
+const PONT=[]; const pontMat=mat(0xcfc7b8,{roughness:.9}), yachtMat=mat(0xf4f4f0), yachtMat2=mat(0x2c3e66);
+function pontoon(letter,i){const x=190+i*40; const pitch=letter==='G'?13.4:9; const w={x,letter,fingers:[]}; box(2,0.5,200,pontMat,x,0.35,MAR.z1-100,scene); obstacles.push({type:'aabb',x0:x-1,x1:x+1,z0:MAR.z1-200,z1:MAR.z1});
+  const nk=Math.floor(195/pitch)+1; for(let k=0;k<nk;k++){const z=MAR.z1-195+k*pitch; [-1,1].forEach(sd=>{box(10,0.4,0.6,pontMat,x+sd*6,0.3,z,scene); obstacles.push({type:'aabb',x0:x+sd*6-5,x1:x+sd*6+5,z0:z-0.3,z1:z+0.3});
+    // berth number: west side odd, east side even, counted from the seaward end
+    const no=(k*2+1)+(sd>0?1:0); w.fingers.push({z,sd,no}); if(k<nk-1){const slot={x:x+sd*6,z:z+pitch/2,no}; // slot between finger k and k+1: west odd, east even, from the seaward end
+      const isG41=(letter==='G'&&sd<0&&k===6); if(isG41){w.g41=slot;} else if(Math.random()<0.55){const L=6+Math.random()*4,B=2.4+Math.random()*1.2; const y=box(L,1.4,B,Math.random()<.7?yachtMat:yachtMat2,slot.x+(sd>0?1:-1)*0,0.7,slot.z,scene); box(L*0.4,1.0,B*0.7,M.cabDark,slot.x-L*0.05,1.9,slot.z,scene); obstacles.push({type:'aabb',x0:slot.x-L/2,x1:slot.x+L/2,z0:slot.z-B/2,z1:slot.z+B/2});}}});}
+  PONT.push(w); // letter board at the seaward end
+  const bd=text3(letter,x,3.2,MAR.z1-204,2.2); return w;}
+function text3(str,x,y,z,size){const cv=document.createElement('canvas');cv.width=256;cv.height=128;const g=cv.getContext('2d');g.fillStyle='#1a2d8c';g.fillRect(0,0,256,128);g.fillStyle='#fff';g.font='700 90px Arial';g.textAlign='center';g.textBaseline='middle';g.fillText(str,128,64);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv)}));sp.scale.set(size,size/2,1);sp.position.set(x,y,z);scene.add(sp);return sp;}
+'ABCDEFGH'.split('').forEach((L,i)=>pontoon(L,i));
+const G=PONT[6], G41=G.g41; // slot centre (x = walkway − 6, z between fingers); SG2 berths bow-in, heading 090, fingers each side
+text3('G41',G41.x,2.0,G41.z,3); box(10,0.06,12.8,M.box,G41.x,0.05,G41.z,scene); // slot clear width 12.8 m = 2 × BOA
+// ================================================================ VESSEL DYNAMICS (3-DOF manoeuvring model, indicative)
+const KN=0.5144; let m=33000, Iz=290000; function setDisp(t){m=t*1000; Iz=m*8.8;}
+// Calibration targets (SG2 Sep-2026 GPX trials + Grandweld H227-C-20-26): max speed 6.1–6.5 kn @22.5 t; turning circle 57–60 s/360° from 6.5 kn,
+// tactical dia 29–47 m, final dia 28–34 m, 43% speed loss; crash stop CS-02 6 s / 8.8 m; steering-gear travel 0→10° 3 s, 20P→20S 10 s (≈4°/s)
+const TMAX=20000, UREF=3.25, UMAX=6.3*KN, ASTERN_EFF=0.42, ASTERN_SIDE=0.7, DMAX=30*Math.PI/180, NOZ_RATE=4*Math.PI/180, TAU_ENG=1.5;
+const XJ=-5.7, YJ=2.2, XBT=4.7, FBT=[2060,2350];                         // jets at transom ±2.2 m; bow thrusters fr ~19.3 (+4.7 m), 210/240 kgf
+const Xu=400,Xuu=2400,Xrr=780000, Yv=4000,Yvv=26000, Nr=250000,Nrr=5.0e6, Nv=-8000;
+// jet force model — Hamilton/Alamarin-type reverse deflector: the lateral component keeps the SAME sense ahead and astern,
+// which is what lets a twin-jet boat sway on jets alone (one ahead, one astern, nozzles deflected) and what the Sigma joystick exploits.
+function jetForces(thP,thS,noz,ur){let X=0,Y=0,N=0; [[thP,-YJ],[thS,YJ]].forEach(([th,yj])=>{const ahead=th>=0;
+  const T=Math.abs(th)*TMAX*(ahead?Math.max(0.55,1-0.35*Math.max(0,ur)/UREF):ASTERN_EFF*Math.max(0.6,1-0.4*Math.max(0,-ur)/UREF));
+  const fx=(ahead?1:-1)*T*Math.cos(noz), fy=-T*Math.sin(noz)*(ahead?1:ASTERN_SIDE); X+=fx;Y+=fy;N+=XJ*fy-yj*fx;}); return [X,Y,N];}
+const S={x:0,z:0,psi:0,u:0,v:0,r:0, levP:0,levS:0, thrP:0,thrS:0, nozCmd:0,noz:0, bt:0, t:0, paused:false};
+const ENV={wind:10,windDir:300,cur:0.3,curDir:200}; // wind from 300°, current sets towards 200°
+let scenario=0, camMode=0, score={t:0,hits:0,maxHit:0,done:false,msg:'',inRing:0,total:0,gate:0,rotDeg:0,psi0:0,out:false};
+const SCN=[
+ {name:'Berthing alongside (port side to)',start:{x:-80,z:-25,psi:75},brief:'Berth port-side-to (heading 090) in the yellow zone (x 0–22). Approach < 2 kn, land < 0.3 kn, heading parallel ±5°, hold 5 s.'},
+ {name:'Buoy slalom',start:{x:0,z:-10,psi:180},brief:'Pass every gate red-to-port / green-to-stbd in order, southbound. Time and buoy contacts count.'},
+ {name:'Station keeping',start:{x:70,z:35,psi:0},brief:'Hold the bow marker inside the green ring for 90 s heading on the yellow pole (000°) in wind and current. Score = % time inside.'},
+ {name:'Pivot turn in box',start:{x:-40,z:40,psi:0},brief:'Turn through 360° using split levers / nozzle / bow thruster without any part of the vessel leaving the yellow box.'},
+ {name:'Free run',start:{x:0,z:30,psi:0},brief:'Practice freely. Try: stop from full speed with buckets; crab sideways with split levers + bow thruster; hold heading in beam wind.'},
+ {name:'AD Marina — berth G41 (bow-in)',start:{x:310,z:-110,psi:180},brief:'Enter between the entrance lights, run down the F–G fairway (18 m) at ≤3 kn, stop abeam G41, pivot to 090 and creep bow-in between the fingers. Slot clear width 12.8 m (2 × BOA). Finish with the bow ≤1 m off pontoon G, heading 090 ±5°, speed <0.3 kn, hold 5 s.'}];
+function resetScenario(){AU.phase=0;AU.t=0;AU.msg='';AU.hold=0;const s=SCN[scenario].start;Object.assign(S,{x:s.x,z:s.z,psi:s.psi*Math.PI/180,u:0,v:0,r:0,levP:0,levS:0,thrP:0,thrS:0,nozCmd:0,noz:0,bt:0});
+  score={t:0,hits:0,maxHit:0,done:false,msg:'',inRing:0,total:0,gate:0,rotDeg:0,psi0:S.psi,out:false,hold:0}; gates.forEach(g=>{g.passed=false;g.mR.material=M.buoyR;g.mG.material=M.buoyG;});
+  document.querySelectorAll('#sc button[data-s]').forEach(bn=>bn.classList.toggle('on',+bn.dataset.s===scenario));}
+const fwdDir=()=>[Math.sin(S.psi),-Math.cos(S.psi)], stbdDir=()=>[Math.cos(S.psi),Math.sin(S.psi)];
+function bodyOfWorld(vx,vz){const f=fwdDir(),s=stbdDir();return [vx*f[0]+vz*f[1], vx*s[0]+vz*s[1]];}
+function step(dt){
+  // actuator lags: engine/bucket combinator (τ 1.5 s incl. bucket travel), nozzle slew 4°/s (yard steering test), thruster instant
+  S.thrP+=(S.levP-S.thrP)*Math.min(1,dt/TAU_ENG); S.thrS+=(S.levS-S.thrS)*Math.min(1,dt/TAU_ENG);
+  const dn=S.nozCmd*DMAX-S.noz; S.noz+=Math.sign(dn)*Math.min(Math.abs(dn),NOZ_RATE*dt);
+  // relative velocity (current)
+  const cu=ENV.cur*KN, cd=ENV.curDir*Math.PI/180; const [cub,cvb]=bodyOfWorld(cu*Math.sin(cd),-cu*Math.cos(cd)); const ur=S.u-cub, vr=S.v-cvb;
+  let X=0,Y=0,N=0;
+  // jets
+  {const [jx,jy,jn]=jetForces(S.thrP,S.thrS,S.noz,ur); X+=jx;Y+=jy;N+=jn;}
+  // bow thrusters (combined lever), effect decays with speed
+  const btEff=Math.max(0,1-Math.abs(ur)/(3*KN)); const Fb=S.bt*(FBT[0]+FBT[1])*btEff; Y+=Fb; N+=XBT*Fb;
+  // hull damping
+  X-=Xu*ur+Xuu*ur*Math.abs(ur); Y-=Yv*vr+Yvv*vr*Math.abs(vr); N-=Nr*S.r+Nrr*S.r*Math.abs(S.r); N+=Nv*vr*Math.abs(vr)*0.3; X-=0.5*Yvv*vr*vr*Math.sign(ur)*0.35+Xrr*S.r*S.r*ur; // drift + turning drag → 43% speed loss in the circle (trials)
+  // wind (areas ~ 15 m² frontal, 28 m² lateral, centre of lateral area 1.0 m aft of midship)
+  const Vw=ENV.wind*KN, wd=ENV.windDir*Math.PI/180; const wvx=-Vw*Math.sin(wd), wvz=Vw*Math.cos(wd); // wind FROM windDir
+  const [wub,wvb]=bodyOfWorld(wvx,wvz); const rwu=wub-S.u, rwv=wvb-S.v; const q=0.5*1.225;
+  X+=q*15*0.8*rwu*Math.abs(rwu); const Yw=q*28*0.9*rwv*Math.abs(rwv); Y+=Yw; N+=-1.0*Yw;
+  // integrate
+  const du=X/m+S.v*S.r, dv=Y/m-S.u*S.r, dr=N/Iz; S.u+=du*dt; S.v+=dv*dt; S.r+=dr*dt;
+  const f=fwdDir(),s=stbdDir(); S.x+=(S.u*f[0]+S.v*s[0])*dt; S.z+=(S.u*f[1]+S.v*s[1])*dt; S.psi+=S.r*dt;
+  collide(); S.t+=dt;
+}
+// collisions: hull footprint circles vs obstacles
+const FOOT=[]; [-4.8,-2.4,0,2.4,4.6].forEach(x=>[-HZ,HZ].forEach(z=>FOOT.push([x,z,1.0])));
+function collide(){const f=fwdDir(),s=stbdDir(); let hit=false;
+  for(const [bx,bz,rad] of FOOT){const wx=S.x+bx*f[0]+bz*s[0], wz=S.z+bx*f[1]+bz*s[1];
+    for(const o of obstacles){let nx=0,nz=0,pen=0;
+      if(o.type==='aabb'){const cx=Math.max(o.x0,Math.min(o.x1,wx)),cz=Math.max(o.z0,Math.min(o.z1,wz));const dx=wx-cx,dz=wz-cz,d=Math.hypot(dx,dz);if(d<rad){if(d<1e-4){nx=0;nz=1;pen=rad;}else{nx=dx/d;nz=dz/d;pen=rad-d;}}}
+      else{const dx=wx-o.x,dz=wz-o.z,d=Math.hypot(dx,dz);if(d<rad+o.r){nx=dx/d;nz=dz/d;pen=rad+o.r-d;}}
+      if(pen>0){hit=true; S.x+=nx*pen; S.z+=nz*pen; const vx=S.u*f[0]+S.v*s[0], vz=S.u*f[1]+S.v*s[1]; const vn=vx*nx+vz*nz;
+        if(vn<0){const sp=-vn; score.hits+=sp>0.3?1:0; score.maxHit=Math.max(score.maxHit,sp); const nvx=vx-vn*nx*1.15, nvz=vz-vn*nz*1.15; const [nu,nv]=bodyOfWorld(nvx,nvz); S.u=nu*0.92; S.v=nv*0.92; S.r*=0.8; haptic(Math.min(1,sp)); }}}}
+  return hit;}
+// scoring
+function scoring(dt){if(score.done)return; score.t+=dt; const sog=Math.hypot(S.u,S.v)/KN, hdg=((S.psi*180/Math.PI)%360+360)%360;
+  if(scenario===0){ // berthing: port side to north quay face z=−60; boat port side z-coordinate: midship − HZ − b in stbd direction
+    const s=stbdDir(); const portSideZ=S.z-(HZ+b)*s[1]; const gap=portSideZ-(-60); const par=Math.min(Math.abs(hdg-90),Math.abs(hdg-90+360),Math.abs(hdg-90-360));
+    const inZone=S.x>0&&S.x<22; if(inZone&&gap>=-0.2&&gap<1.0&&par<5&&sog<0.3){score.hold+=dt;if(score.hold>5){score.done=true;score.msg=`BERTHED · ${score.t.toFixed(0)} s · max contact ${score.maxHit.toFixed(2)} m/s · hits ${score.hits}`;}} else score.hold=0;
+    score.info=`gap ${gap.toFixed(1)} m · parallel ${par.toFixed(0)}° · hold ${score.hold.toFixed(1)}/5 s`;}
+  if(scenario===1){const g=gates[score.gate]; if(g){ // crossing gate line (z=g.z) southbound within gate width
+      if(S.z>g.z&&S.z-g.z<3&&Math.abs(S.x-g.x)<g.w/2){g.passed=true;g.mR.material=M.buoyY;g.mG.material=M.buoyY;score.gate++;} else if(S.z>g.z+3){score.msg='Missed gate '+(score.gate+1)+' — reset (R)';}
+      score.info=`gate ${score.gate+1}/5 · ${score.t.toFixed(0)} s · contacts ${score.hits}`;} else {score.done=true;score.msg=`SLALOM COMPLETE · ${score.t.toFixed(0)} s · buoy contacts ${score.hits}`;}}
+  if(scenario===2){const f=fwdDir(); const bowX=S.x+MID*f[0], bowZ=S.z+MID*f[1]; const d=Math.hypot(bowX-SK.x,bowZ-SK.z); const hErr=Math.min(hdg,360-hdg); const ok=d<SK.r&&hErr<10;
+    score.total+=dt; if(ok)score.inRing+=dt; score.info=`bow off ${d.toFixed(1)} m · hdg err ${hErr.toFixed(0)}° · in ring ${(100*score.inRing/Math.max(1e-3,score.total)).toFixed(0)}% · ${score.total.toFixed(0)}/90 s`;
+    if(score.total>=90){score.done=true;score.msg=`STATION KEEPING · ${(100*score.inRing/score.total).toFixed(0)}% inside · wind ${ENV.wind} kn · current ${ENV.cur} kn`;}}
+  if(scenario===3){score.rotDeg+=S.r*180/Math.PI*dt; const f=fwdDir(),s=stbdDir(); for(const [bx,bz] of FOOT){const wx=S.x+bx*f[0]+bz*s[0],wz=S.z+bx*f[1]+bz*s[1]; if(Math.abs(wx-PB.x)>PB.s/2||Math.abs(wz-PB.z)>PB.s/2)score.out=true;}
+    score.info=`turned ${Math.abs(score.rotDeg).toFixed(0)}° · ${score.t.toFixed(0)} s · ${score.out?'LEFT THE BOX':'inside'}`; if(Math.abs(score.rotDeg)>=360){score.done=true;score.msg=`PIVOT COMPLETE · ${score.t.toFixed(0)} s · ${score.out?'box breached':'clean'}`;}}
+  if(scenario===4){score.info=`SOG ${sog.toFixed(1)} kn · ${score.t.toFixed(0)} s`;}
+  if(scenario===5){const f=fwdDir(); const bowX=S.x+MID*f[0], bowZ=S.z+MID*f[1]; const off=(G.x-1)-bowX; const par=Math.min(Math.abs(hdg-90),Math.abs(hdg-90+360),Math.abs(hdg-90-360)); const inSlot=Math.abs(S.z-G41.z)<1.5&&S.x>G41.x-8;
+    if(inSlot&&off>=-0.2&&off<1.0&&par<5&&sog<0.3){score.hold+=dt;if(score.hold>5){score.done=true;score.msg=`BERTHED IN G41 · ${score.t.toFixed(0)} s · max contact ${score.maxHit.toFixed(2)} m/s · hits ${score.hits}`;}} else score.hold=0;
+    score.info=`bow off pontoon ${off.toFixed(1)} m · heading err ${par.toFixed(0)}° · lateral ${(S.z-G41.z).toFixed(1)} m · hold ${score.hold.toFixed(1)}/5 s`;}
+}
+
+const clamp1=v=>Math.max(-1,Math.min(1,v)), wrapA=a=>Math.atan2(Math.sin(a),Math.cos(a)), deg=d=>d*Math.PI/180;
+const bearingTo=(x,z)=>Math.atan2(x-S.x,-(z-S.z)), distTo=(x,z)=>Math.hypot(x-S.x,z-S.z);
+function bodyErr(x,z){const dx=x-S.x,dz=z-S.z,f=fwdDir(),sd=stbdDir();return [dx*f[0]+dz*f[1],dx*sd[0]+dz*sd[1]];}
+// ================================================================ CONTROL MODES — Twin Lever (manual) / Sigma 3-axis Joystick / Position Hold
+// Joystick principle (Alamarin-Jet Sigma, HamiltonJet blueARROW-type): the operator gives a body-axis demand — X sway, Y surge, twist yaw —
+// and the HCU allocates bucket positions, common nozzle angle and (if fitted) bow thruster so the resultant force matches the demand.
+// Sway is produced by deflecting both nozzles towards the far side with one jet ahead and one astern: fore/aft thrust cancels,
+// the lateral components add (the reverse deflector preserves the lateral sense), and the residual yaw is trimmed with the bow thruster.
+let MODE=0; const JOY={x:0,y:0,w:0}; const PH={on:false,x:0,z:0,psi:0};
+function setMode(mo){MODE=mo; document.getElementById('mode').value=mo; if(mo===2){PH.on=true;PH.x=S.x;PH.z=S.z;PH.psi=S.psi;} else PH.on=false; if(mo===0){JOY.x=JOY.y=JOY.w=0;} S.levP=S.levS=0;S.nozCmd=0;S.bt=0;}
+function joyAlloc(sway,surge,yaw){sway=clamp1(sway);surge=clamp1(surge);yaw=clamp1(yaw); const a=Math.abs(sway), sw=Math.sign(sway);
+  // nozzle towards the side opposite the demanded sway (side force = −T·sinδ), proportional and clipped
+  const noz=-sw*Math.min(1,a*1.6);
+  // one jet ahead, one astern with astern scaled so fore/aft cancels: sway to STBD → port ahead / stbd astern
+  // the astern jet needs |lever| ≈ ka/ASTERN_EFF so its fore/aft thrust matches the ahead jet's
+  const ka=0.4*a, kb=Math.min(1,ka/ASTERN_EFF); let eP=sw>0?ka:-kb, eS=sw>0?-kb:ka; if(a<0.02){eP=0;eS=0;}
+  eP+=surge; eS+=surge; eP+=0.5*yaw; eS-=0.5*yaw;
+  // headway trim: an astern bucket gives only ~42% of ahead thrust, so re-balance both levers until the net fore/aft thrust matches the surge demand
+  for(let i=0;i<3;i++){const [Xp]=jetForces(clamp1(eP),clamp1(eS),noz*DMAX,S.u); const corr=(surge*2*TMAX*0.7-Xp)/(2*TMAX); eP+=corr; eS+=corr;}
+  S.nozCmd=noz; S.levP=clamp1(eP); S.levS=clamp1(eS);
+  // trim residual yaw with the bow thrusters (model-consistent): predicted N from the commanded state vs demanded N
+  const [,,Np]=jetForces(S.levP,S.levS,noz*DMAX,S.u); const Nd=yaw*40000; S.bt=clamp1(-(Np-Nd)/(XBT*(FBT[0]+FBT[1])));}
+function positionHold(){const [ex,ey]=bodyErr(PH.x,PH.z); const e=wrapA(PH.psi-S.psi);
+  const surge=clamp1(0.30*ex-0.9*S.u), sway=clamp1(0.35*ey-1.2*S.v), yaw=clamp1(2.0*e-4.0*S.r); joyAlloc(sway+JOY.x*0.4,surge+JOY.y*0.4,yaw+JOY.w*0.4);
+  if(Math.abs(JOY.x)>0.05||Math.abs(JOY.y)>0.05){PH.x=S.x;PH.z=S.z;} if(Math.abs(JOY.w)>0.05)PH.psi=S.psi;}
+// ================================================================ AUTO DEMO (instructor) — drives the vessel and narrates the technique
+let AUTO=false; const AU={phase:0,t:0,msg:'',hold:0};
+
+function toggleAuto(){AUTO=!AUTO; document.getElementById('auto').textContent='AUTO demo: '+(AUTO?'ON':'off')+' (T)'; document.getElementById('auto').classList.toggle('on',AUTO); if(AUTO){AU.phase=0;AU.t=0;AU.hold=0;} else {S.levP=S.levS=0;S.nozCmd=0;S.bt=0;}}
+document.getElementById('auto').onclick=toggleAuto;
+// heading control: nozzle when there is flow (sign reverses astern), split levers when nearly stopped. Adds thruster yaw compensation.
+function ctlHeading(psiD,base,btFF=0){const e=wrapA(psiD-S.psi), rD=Math.max(-0.25,Math.min(0.25,0.9*e)), re=rD-S.r; const spd=Math.abs(S.u);
+  // blend: nozzle authority grows with flow (sign reverses astern); split levers take over as the way comes off
+  // "kick ahead": a waterjet cannot steer without flow — if a big heading change is needed while coasting, put power on
+  if(Math.abs(e)>deg(12)&&Math.abs(base)<0.25&&S.u>-0.2)base=0.25;
+  const wN=Math.min(1,spd/0.9), wS=1-Math.min(1,spd/1.2), wT=Math.min(1,(Math.abs(S.thrP)+Math.abs(S.thrS))/0.4);
+  S.nozCmd=clamp1((1.6*e+4*re)*(S.u>=0?1:-1))*wN*Math.max(0.15,wT);
+  const d=Math.max(-0.6,Math.min(0.6,(1.2*e+3.0*re)*wS))-0.315*btFF; S.levP=clamp1(base+d); S.levS=clamp1(base-d);}
+const speedLever=uD=>clamp1(0.9*uD/UMAX+0.45*(uD-S.u));   // feed-forward + proportional, negative = bucket astern
+function autopilot(dt){AU.t+=dt; S.bt=0; const hdg=S.psi;
+ if(scenario===0){ // BERTHING port-side-to, quay face z=-60, zone x 0–22
+  const gap=(S.z-(HZ+b)*stbdDir()[1])+60;
+  if(AU.phase===0){const wp=[-42,-47.5]; AU.msg='1 · Approach: come round early onto a line parallel to the quay, ~9 m off, well before the berth, at 2.5 kn. Steering needs flow — keep the jets ahead.'; ctlHeading(bearingTo(...wp),speedLever(2.5*KN)); if(distTo(...wp)<6||S.x>-42)AU.phase=1;}
+  else if(AU.phase===1){AU.msg='2 · Line up parallel (090°) at 1.5 kn and close the gap on a shallow line — aim a point ~10 m ahead on the track, so wind and current set are corrected automatically. Watch the quarter, not the bow.'; const gapD=S.x<-2?Math.max(1.8,9-(S.x+42)*0.18):1.8; const zT=-60+(HZ+b)+gapD; let hd=bearingTo(S.x+10,zT+1.2*(zT-S.z)); hd=deg(90)+Math.max(-deg(18),Math.min(deg(18),wrapA(hd-deg(90)))); const bt1=gap<5?clamp1(-(gap-gapD)*0.6):0; S.bt=bt1; ctlHeading(hd,speedLever((gap>4?2.0:1.2)*KN),bt1); if(S.x>3&&gap<2.6)AU.phase=2;}
+  else if(AU.phase===2){AU.msg='3 · Take the way off with the buckets — astern on both, nozzles amidships. Headway kills fenders; land at walking pace or less.'; ctlHeading(deg(90),speedLever(0)); if(Math.abs(S.u)<0.12)AU.phase=3;}
+  else if(AU.phase===3){AU.msg='4 · Crab alongside (joystick logic): nozzles to STBD, stbd ahead / port astern — the deflected streams both push the stern to port and the fore/aft thrust cancels; the bow thruster trims the bow. Pure sway, no headway.'; const along=bodyErr(11,S.z)[0]; const e=wrapA(deg(90)-S.psi); joyAlloc(-Math.min(0.6,0.15+gap*0.25)*(gap>0.25?1:0),clamp1(0.12*along-0.6*S.u),clamp1(2*e-4*S.r)); if(gap<=0.25&&Math.hypot(S.u,S.v)<0.25)AU.phase=4;}
+  else {AU.msg='5 · Alongside. Neutral both, a touch of thruster to pin the bow while lines go on. Done.'; S.levP=S.levS=0;S.nozCmd=0;S.bt=-0.25;}}
+ if(scenario===1){ // SLALOM
+  const g=gates[score.gate]; if(g){const wp=[g.x,g.z]; const ex=bodyErr(g.x,g.z)[0]; const nxt=gates[score.gate+1]; AU.msg=`Gate ${score.gate+1}: point at the gate centre early, ${nxt?'start the swing for the next gate as the bow clears the buoys':'then take the way off with the buckets'}. Keep 4–5 kn: at low speed the nozzle loses authority.`;
+    const lead=nxt&&ex<12?[g.x*0.4+nxt.x*0.6,g.z*0.4+nxt.z*0.6]:wp; ctlHeading(bearingTo(...lead),speedLever(4.5*KN));}
+  else{AU.msg='Course complete — buckets astern to stop, nozzles amidships.'; ctlHeading(hdg,speedLever(0));}}
+ if(scenario===2){ // STATION KEEPING: midship target so the bow sits on the ring, heading 000
+  const [ex,ey]=bodyErr(SK.x,SK.z+MID); AU.msg='Hold position: surge with small lever movements on both jets; sway with the bow thruster; cancel the thruster\'s yaw with split levers. Face the wind/current and correct early — small corrections, not big ones.';
+  const e=wrapA(0-S.psi); joyAlloc(clamp1(0.35*ey-1.2*S.v),clamp1(0.30*ex-0.9*S.u),clamp1(2.0*e-4.0*S.r)); AU.msg='Hold position (this is what Sigma Position Hold does): surge on both levers, sway from deflected nozzles with one jet ahead / one astern, bow thruster trimming the yaw. Face the wind/current; small early corrections.';}
+ if(scenario===3){ // PIVOT in box
+  const [ex,ey]=bodyErr(PB.x,PB.z); AU.msg='(see live note)';
+  joyAlloc(Math.abs(ey)>1.0?clamp1(0.6*ey-1.2*S.v):0,clamp1(0.25*ex-0.6*S.u),0.9); AU.msg='Pivot: twist → split levers, nozzles amidships. Note the astern bucket gives ~40% of ahead thrust, so the astern lever must be well past the ahead lever or the boat creeps forward. Expect ~3–4°/s on this hull.';}
+ if(scenario===5){ // AD MARINA G41: entrance → fairway F–G → stop abeam → pivot → creep bow-in
+  const fairX=(PONT[5].x+PONT[6].x)/2; // 377
+  if(AU.phase===0){const wp=[(MAR.ent[0]+MAR.ent[1])/2,MAR.z0-6]; AU.msg='1 · Entrance: line up mid-channel between the red and green lights at 3 kn. Call the marina, check the fairway is clear.'; ctlHeading(bearingTo(...wp),speedLever(3*KN)); if(distTo(...wp)<6)AU.phase=1;}
+  else if(AU.phase===1){const wp=[fairX-6,-2]; AU.msg='2 · Stand well off the pontoon heads (~60 m) and come round onto the F–G fairway line at 2.5 kn — the fairway is 18 m wide, you must be straight before you enter. Never cut the corner past the heads.'; ctlHeading(bearingTo(...wp),speedLever(2.5*KN)); if(distTo(...wp)<7||S.x>fairX-8)AU.phase=1.5;}
+  else if(AU.phase===1.5){const latE=fairX-S.x; AU.msg='2b · Settle on the fairway centreline heading 180° and reduce to 1.6 kn before the heads; correct lateral offset now, not inside the fairway.'; let hd=bearingTo(fairX+1.5*latE,S.z+14); hd=deg(180)+Math.max(-deg(25),Math.min(deg(25),wrapA(hd-deg(180)))); ctlHeading(hd,speedLever(1.6*KN)); if(S.z>MAR.z1-215&&Math.abs(latE)<1.2)AU.phase=2;}
+  else if(AU.phase===2){AU.msg='3 · Run down the fairway at 1.5 kn and take the way off with the buckets so the midship stops exactly abeam G41. Overshooting a finger berth is the classic error.'; const ex=bodyErr(fairX,G41.z)[0]; const latE=fairX-S.x; let hd=bearingTo(fairX+1.5*latE,S.z+14); hd=deg(180)+Math.max(-deg(20),Math.min(deg(20),wrapA(hd-deg(180)))); ctlHeading(ex>8?hd:deg(180),clamp1(ex>8?speedLever(1.6*KN):0.2*ex-0.8*S.u)); if(Math.abs(ex)<0.6&&Math.abs(S.u)<0.15)AU.phase=3;}
+  else if(AU.phase===3){AU.msg='4 · Pivot 90° to port: twist demand → split levers, nozzles amidships, no headway; sway demand keeps the midship on the slot centreline.'; const [ex,ey]=bodyErr(fairX,G41.z); const e=wrapA(deg(90)-S.psi); joyAlloc(clamp1(0.6*ey-1.2*S.v),clamp1(0.2*ex-0.7*S.u),clamp1(2.2*e-3.5*S.r)); if(Math.abs(wrapA(deg(90)-S.psi))<deg(3)&&Math.abs(S.r)<0.02&&Math.abs(ey)<0.45)AU.phase=4;}
+  else if(AU.phase===4){AU.msg='5 · Creep in at 0.5 kn: surge on the joystick, lateral offset corrected with sway (nozzles + split), heading with twist. Fingers are ~3 m off each hull in this 2 × BOA slot — watch the quarters.'; const [ex,ey]=bodyErr(G.x-1-MID,G41.z); const e=wrapA(deg(90)-S.psi); const creep=Math.abs(ey)>0.6?0:Math.min(0.3,0.25*ex); joyAlloc(clamp1(0.7*ey-1.5*S.v),clamp1(creep-0.9*S.u),clamp1(2.2*e-3.5*S.r)); if(ex<1.0&&Math.abs(S.u)<0.1)AU.phase=5;}
+  else {AU.msg='6 · Bow ≤1 m off the pontoon, neutral both, thruster to hold, lines on both fingers. Berthed in G41.'; S.levP=S.levS=0;S.nozCmd=0;S.bt=0;}}
+ if(scenario===4){ // FREE RUN demo sequence
+  if(AU.t<25){AU.msg='Demo 1 · Acceleration to full speed (~6.2 kn at trial displacement, as recorded): both levers ahead, small nozzle to hold heading. Note the ~1.5 s engine/bucket response and the 4°/s nozzle.'; ctlHeading(0,1.0);}
+  else if(AU.t<45){AU.msg='Demo 2 · Crash stop: buckets full astern — the jets reverse without stopping the engines (trial CS-02: ~6 s, 9 m from 6 kn). The reverse deflector keeps the steering sense: nozzle to stbd still pushes the stern to port, so going astern the stern walks away from the nozzle.'; ctlHeading(0,-1.0); if(S.u<0.2&&AU.t>30)AU.t=45;}
+  else if(AU.t<75){AU.msg='Demo 3 · Crab to starboard on jets: nozzles to PORT, port ahead / stbd astern (astern lever larger to cancel headway) — both lateral components push the stern to stbd; bow thruster trims the bow. This is exactly the Sigma joystick allocation.'; const e=wrapA(0-S.psi); joyAlloc(0.8,clamp1(-0.6*S.u),clamp1(2*e-4*S.r));}
+  else if(AU.t<105){AU.msg='Demo 4 · Pivot to port on the spot: port astern / stbd ahead ~40%, nozzles amidships (joystick twist). Expect ~4°/s — the hull is heavy and the jets are close together. Steady with a short opposite split.'; joyAlloc(0,clamp1(-0.6*S.u),-0.9);}
+  else {AU.msg='Demo 5 · Hold heading 000 in the wind at slow speed — nozzle only becomes useful once there is flow; below ~1 kn use the levers.'; ctlHeading(0,speedLever(1.5*KN));}}
+}
+// ================================================================ INPUT (Quest controllers + keyboard)
+const keys={}; addEventListener('keydown',e=>{keys[e.code]=true; if(e.code==='Space'){S.levP=S.levS=0;S.nozCmd=0;S.bt=0;} if(e.code==='KeyR')resetScenario(); if(e.code==='KeyN'){scenario=(scenario+1)%SCN.length;resetScenario();} if(e.code==='KeyV')cycleCam(); if(e.code==='KeyP')S.paused=!S.paused; if(e.code==='KeyT')toggleAuto(); if(e.code==='KeyB')setCabin(!CABIN); if(e.code==='KeyM')setMode(MODE===0?1:0); if(e.code==='KeyH')setMode(MODE===2?1:2);});
+addEventListener('keyup',e=>keys[e.code]=false);
+function keyboard(dt){const rate=1.2*dt; const lim=v=>Math.max(-1,Math.min(1,v));
+  if(MODE>0){const st=(a,b)=>keys[a]?1:keys[b]?-1:0; JOY.y=st('KeyI','KeyK'); JOY.x=st('KeyL','KeyJ'); JOY.w=st('KeyO','KeyU'); return;}
+  if(keys['KeyW']){S.levP=lim(S.levP+rate);S.levS=lim(S.levS+rate);} if(keys['KeyS']){S.levP=lim(S.levP-rate);S.levS=lim(S.levS-rate);}
+  if(keys['KeyQ'])S.levP=lim(S.levP+rate); if(keys['KeyA'])S.levP=lim(S.levP-rate); if(keys['KeyE'])S.levS=lim(S.levS+rate); if(keys['KeyD'])S.levS=lim(S.levS-rate);
+  if(keys['ArrowLeft'])S.nozCmd=lim(S.nozCmd-2*dt); else if(keys['ArrowRight'])S.nozCmd=lim(S.nozCmd+2*dt); 
+  if(keys['ArrowDown'])S.nozCmd=0;
+  if(keys['KeyZ'])S.bt=-1; else if(keys['KeyC'])S.bt=1; else if(!xrActive)S.bt=0;}
+let xrActive=false, prevBtn={}; let hapticSrc=[];
+function haptic(i){for(const g of hapticSrc){try{g.hapticActuators&&g.hapticActuators[0]&&g.hapticActuators[0].pulse(i,80);}catch(e){}}}
+let walking=false, xrDt=0;
+function xrInput(dt){xrDt=dt||0; const ses=renderer.xr.getSession(); if(!ses){xrActive=false;return;} xrActive=true; hapticSrc=[]; let link=false; walking=false;
+  for(const src of ses.inputSources){const gp=src.gamepad; if(!gp)continue; hapticSrc.push(gp); const ax=gp.axes, bt=gp.buttons; const sx=ax.length>=4?ax[2]:ax[0], sy=ax.length>=4?ax[3]:ax[1]; const dz=v=>Math.abs(v)<0.12?0:v;
+    const edge=(i,fn)=>{const k=src.handedness+i; const p=bt[i]&&bt[i].pressed; if(p&&!prevBtn[k])fn(); prevBtn[k]=p;};
+    if(src.handedness==='left')edge(5,toggleMenu);                                   // Y = menu
+    if(MENU.open){if(src.handedness==='left')menuNav(dz(sx),dz(sy),bt[0]&&bt[0].pressed); if(src.handedness==='right'&&bt[0]&&bt[0].pressed&&MENU.rep<=0){ITEMS[MENU.sel].set(1);MENU.rep=0.3;drawMenu();} continue;}
+    const leftGrip=src.handedness==='left'&&bt[1]&&bt[1].pressed; if(leftGrip)walking=true;
+    if(walking&&src.handedness==='left'){walk(-dz(sy)*1.3,dz(sx)*1.3,xrDt); continue;}   // hold LEFT GRIP + left stick = walk on deck
+    if(walking&&src.handedness==='right'){const t=dz(sx); if(Math.abs(t)>0.7&&!prevBtn.snap){rig.rotation.y-=Math.sign(t)*Math.PI/6;prevBtn.snap=true;} if(Math.abs(t)<0.3)prevBtn.snap=false; continue;} // snap turn 30°
+    if(bt[1]&&bt[1].pressed&&src.handedness==='right')link=true;
+    if(!AUTO){if(MODE===0){if(src.handedness==='left'){S.levP=-dz(sy); S.bt=dz(sx);} else {S.levS=-dz(sy); S.nozCmd=dz(sx); if(bt[0]&&bt[0].pressed)S.nozCmd=0;}}
+      else {if(src.handedness==='right'){JOY.x=dz(sx);JOY.y=-dz(sy);} else {JOY.w=dz(sx);}}}
+    if(src.handedness==='right'){edge(4,cycleCam); edge(5,resetScenario); edge(3,toggleAuto);} else {edge(4,()=>{scenario=(scenario+1)%SCN.length;resetScenario();}); edge(3,()=>S.paused=!S.paused); edge(0,()=>setMode(MODE===2?1:MODE===1?2:1));}}
+  if(link&&!AUTO&&MODE===0){const a=(S.levP+S.levS)/2;S.levP=S.levS=a;}}
+// VR button
+const vrBtn=document.getElementById('vr');
+(function(){const fail=msg=>{vrBtn.disabled=true;vrBtn.textContent=msg;vrBtn.title='WebXR needs a plain https page (GitHub Pages / Netlify). It is blocked inside embedded or sandboxed frames.';};
+  const inFrame=window.self!==window.top; if(!navigator.xr){fail(inFrame?'VR blocked in this frame — open on your own https host':'WebXR not supported');return;}
+  const timer=setTimeout(()=>fail('VR check blocked — host the file on GitHub Pages'),4000);
+  Promise.resolve().then(()=>navigator.xr.isSessionSupported('immersive-vr')).then(ok=>{clearTimeout(timer);if(ok){vrBtn.disabled=false;vrBtn.textContent='ENTER VR';}else fail(inFrame?'VR blocked in this frame — open on your own https host':'VR not available in this browser');})
+  .catch(()=>{clearTimeout(timer);fail(inFrame?'VR blocked in this frame — host on GitHub Pages':'VR not available');});})();
+vrBtn.onclick=async()=>{const ses=renderer.xr.getSession(); if(ses){ses.end();return;} const s=await navigator.xr.requestSession('immersive-vr',{optionalFeatures:['local-floor','bounded-floor']}); renderer.xr.setSession(s); vrBtn.textContent='EXIT VR'; camMode=0; s.addEventListener('end',()=>{vrBtn.textContent='ENTER VR';});};
+
+// ================================================================ HUD (canvas → DOM on desktop, texture on console panel in VR)
+const hud=document.getElementById('hud'), hg=hud.getContext('2d'); const hudTex=new THREE.CanvasTexture(hud);
+const panel=new THREE.Mesh(new THREE.PlaneGeometry(0.48,0.18),new THREE.MeshBasicMaterial({map:hudTex,transparent:true,opacity:0.72,depthWrite:false}));
+panel.position.set(0.7,0.9,-0.5); panel.rotation.order='YXZ'; panel.rotation.y=-Math.PI/2+0.45; panel.rotation.x=-0.45; rig.add(panel);
+// Y (left controller) toggles console size in VR: compact ↔ hidden ↔ full
+let panelMode=0; function cyclePanel(){panelMode=(panelMode+1)%3; panel.visible=panelMode!==1; const k=panelMode===2?1.5:1; panel.scale.set(k,k,1); panel.material.opacity=panelMode===2?0.9:0.72;}
+// ---- VR menu: hidden by default; Y opens/closes. Left stick ↕ selects a row, ↔ changes the value, right trigger activates a command row.
+const menuCv=document.createElement('canvas'); menuCv.width=640; menuCv.height=700; const mg=menuCv.getContext('2d'); const menuTex=new THREE.CanvasTexture(menuCv);
+const menuP=new THREE.Mesh(new THREE.PlaneGeometry(0.64,0.7),new THREE.MeshBasicMaterial({map:menuTex,transparent:true,depthWrite:false})); menuP.visible=false; rig.add(menuP);
+const MENU={open:false,sel:0,rep:0};
+const cyc=(arr,v,d)=>arr[(arr.indexOf(v)+d+arr.length)%arr.length];
+const ITEMS=[
+ {n:'Scenario',get:()=>`${scenario+1}. ${SCN[scenario].name}`,set:d=>{scenario=(scenario+d+SCN.length)%SCN.length;resetScenario();}},
+ {n:'Control mode',get:()=>['Twin Lever + nozzle','Sigma Joystick','Joystick + Position Hold'][MODE],set:d=>setMode((MODE+d+3)%3)},
+ {n:'AUTO demo',get:()=>AUTO?'ON':'off',set:()=>toggleAuto()},
+ {n:'Wind speed',get:()=>ENV.wind+' kn',set:d=>{ENV.wind=cyc([0,5,10,15,20,25,30],ENV.wind,d);}},
+ {n:'Wind from',get:()=>ENV.windDir+'°',set:d=>{ENV.windDir=(ENV.windDir+d*45+360)%360;}},
+ {n:'Current',get:()=>ENV.cur+' kn → '+ENV.curDir+'°',set:d=>{ENV.cur=cyc([0,0.5,1.0,1.5],ENV.cur,d);}},
+ {n:'Current sets',get:()=>ENV.curDir+'°',set:d=>{ENV.curDir=(ENV.curDir+d*45+360)%360;}},
+ {n:'Sea state Hs',get:()=>Hs+' m',set:d=>{Hs=cyc([0,0.3,0.8],Hs,d);}},
+ {n:'Displacement',get:()=>(m/1000).toFixed(1)+' t',set:d=>setDisp(m>30000?22.46:33)},
+ {n:'Standing spot',get:()=>['fwd platform','stern platform','port hull deck','stbd hull deck'][camMode%4],set:()=>cycleCam()},
+ {n:'Temporary cabin',get:()=>CABIN?'fitted':'removed',set:()=>setCabin(!CABIN)},
+ {n:'Console',get:()=>['compact','hidden','large'][panelMode],set:()=>cyclePanel()},
+ {n:'Reset scenario',get:()=>'▶',set:()=>resetScenario()},
+ {n:'Pause',get:()=>S.paused?'PAUSED':'running',set:()=>S.paused=!S.paused}];
+function drawMenu(){const W=menuCv.width,H=menuCv.height; mg.clearRect(0,0,W,H); mg.fillStyle='rgba(11,20,28,0.92)'; mg.fillRect(0,0,W,H); mg.strokeStyle='#2f9a77'; mg.lineWidth=3; mg.strokeRect(2,2,W-4,H-4);
+  mg.fillStyle='#fff'; mg.font='700 26px Arial'; mg.textAlign='left'; mg.textBaseline='middle'; mg.fillText('SG2 SIMULATOR — MENU',24,36);
+  mg.font='16px Arial'; mg.fillStyle='#9fb3ad'; mg.fillText('Left stick ↕ select · ↔ change · Y close · hold LEFT GRIP + left stick = walk on deck',24,66);
+  ITEMS.forEach((it,i)=>{const y=100+i*40; if(i===MENU.sel){mg.fillStyle='#1f6b52';mg.fillRect(14,y-18,W-28,36);} mg.fillStyle=i===MENU.sel?'#fff':'#d6e2de'; mg.font='600 20px Arial'; mg.fillText(it.n,28,y); mg.textAlign='right'; mg.fillStyle=i===MENU.sel?'#f3d27a':'#8fd3ff'; mg.fillText(it.get(),W-28,y); mg.textAlign='left';});
+  mg.fillStyle='#9fb3ad'; mg.font='15px Arial'; const y0=100+ITEMS.length*40+10;
+  ['TWIN LEVER: L-stick ↕ port · R-stick ↕ stbd · R-stick ↔ nozzle · L-stick ↔ bow thruster','JOYSTICK: R-stick sway/surge · L-stick ↔ twist · L-trigger Position Hold','A camera spot · B reset · X next scenario · R-stick click AUTO · L-stick click pause',
+   'Waterjet: no steering without flow · astern the stern walks AWAY from the nozzle side','one ahead + one astern with nozzles deflected = sway · nozzles amidships = pivot'].forEach((t,i)=>mg.fillText(t,24,y0+i*22));
+  menuTex.needsUpdate=true;}
+function toggleMenu(){MENU.open=!MENU.open; menuP.visible=MENU.open; if(MENU.open){ // place 1.1 m in front of the head at eye height, facing the user
+    const head=new THREE.Vector3(); camera.getWorldDirection(head); const q=rig.getWorldQuaternion(new THREE.Quaternion()).invert(); head.applyQuaternion(q); head.y=0; head.normalize();
+    const eye=camera.position.clone(); menuP.position.set(eye.x+head.x*1.1,Math.max(1.0,eye.y-0.1),eye.z+head.z*1.1); menuP.lookAt(eye.x,menuP.position.y,eye.z); drawMenu();}}
+function menuNav(sx,sy,act){MENU.rep-=1/60; if(MENU.rep>0)return; if(sy<-0.6){MENU.sel=(MENU.sel-1+ITEMS.length)%ITEMS.length;MENU.rep=0.25;} else if(sy>0.6){MENU.sel=(MENU.sel+1)%ITEMS.length;MENU.rep=0.25;}
+  else if(sx>0.6){ITEMS[MENU.sel].set(1);MENU.rep=0.3;} else if(sx<-0.6){ITEMS[MENU.sel].set(-1);MENU.rep=0.3;} else if(act){ITEMS[MENU.sel].set(1);MENU.rep=0.3;} drawMenu();}
+function drawHUD(){const W=hud.width,H=hud.height; hg.clearRect(0,0,W,H); hg.fillStyle='rgba(11,20,28,0.45)'; hg.fillRect(0,0,W,H);
+  const sog=Math.hypot(S.u,S.v)/KN, hdg=((S.psi*180/Math.PI)%360+360)%360, rot=S.r*180/Math.PI*60; hg.textBaseline='middle';
+  // levers
+  [[70,'PORT',S.levP,S.thrP],[170,'STBD',S.levS,S.thrS]].forEach(([x,lab,lev,thr])=>{hg.fillStyle='#233';hg.fillRect(x-22,40,44,260);hg.fillStyle='#456';hg.fillRect(x-22,168,44,4);
+    hg.fillStyle=thr>=0?'#2fd39a':'#ff7a6b';const h=thr*125;hg.fillRect(x-16,170-Math.max(0,h),32,Math.abs(h));hg.fillStyle='#fff';hg.fillRect(x-26,170-lev*125-2,52,4);
+    hg.fillStyle='#e6ebe9';hg.font='600 16px Arial';hg.textAlign='center';hg.fillText(lab,x,22);hg.font='14px Arial';hg.fillText((thr>=0?'AHEAD ':'ASTERN ')+Math.round(Math.abs(thr)*100)+'%',x,320);});
+  // nozzle & bow thruster
+  hg.fillStyle='#233';hg.fillRect(240,60,180,26);hg.fillStyle='#8fd3ff';const nx=330+S.noz/DMAX*80;hg.fillRect(nx-4,56,8,34);hg.fillStyle='#e6ebe9';hg.font='14px Arial';hg.textAlign='center';hg.fillText(`NOZZLE ${(S.noz*180/Math.PI).toFixed(0)}° ${S.noz>0.01?'STBD':S.noz<-0.01?'PORT':''}`,330,40);
+  hg.fillStyle='#233';hg.fillRect(240,130,180,26);hg.fillStyle=S.bt?'#f2c14e':'#456';hg.fillRect(330,133,S.bt*85,20);hg.fillStyle='#e6ebe9';hg.fillText(`BOW THRUSTER ${Math.round(S.bt*100)}%`,330,112);
+  // speed / heading / ROT
+  hg.font='700 30px Arial';hg.fillStyle='#fff';hg.textAlign='center';hg.fillText(sog.toFixed(1)+' kn',370,212);hg.font='12px Arial';hg.fillStyle='#9fb3ad';hg.fillText('SOG',370,232);
+  hg.font='700 26px Arial';hg.fillStyle='#fff';hg.fillText(hdg.toFixed(0).padStart(3,'0')+'°',370,262);hg.font='12px Arial';hg.fillStyle='#9fb3ad';hg.fillText('HDG',370,280);
+  hg.font='700 22px Arial';hg.fillStyle=Math.abs(rot)>60?'#ff7a6b':'#fff';hg.fillText((rot>0?'▶ ':'◀ ')+Math.abs(rot).toFixed(0)+'°/min',330,318);hg.font='14px Arial';hg.fillStyle='#9fb3ad';hg.fillText(`surge ${(S.u/KN).toFixed(1)} · sway ${(S.v/KN).toFixed(1)} kn`,330,345);
+  // wind/current
+  hg.fillStyle='#e6ebe9';hg.font='14px Arial';hg.textAlign='left';hg.fillText(`Wind ${ENV.wind} kn from ${ENV.windDir}°   Current ${ENV.cur} kn → ${ENV.curDir}°   Sea Hs ${Hs} m   Δ ${(m/1000).toFixed(1)} t`,450,22);
+  // control mode + joystick vector
+  hg.fillStyle=MODE===0?'#456':MODE===1?'#1f6b52':'#8a6a1a';hg.fillRect(240,168,180,22);hg.fillStyle='#fff';hg.font='600 12px Arial';hg.textAlign='center';hg.fillText(MODE===0?'TWIN LEVER + NOZZLE':MODE===1?'SIGMA JOYSTICK':'JOYSTICK · POSITION HOLD',330,179);
+  if(MODE>0){hg.strokeStyle='#8fd3ff';hg.lineWidth=1;hg.strokeRect(240,196,60,60);hg.beginPath();hg.moveTo(270,226);hg.lineTo(270+JOY.x*28,226-JOY.y*28);hg.stroke();hg.fillStyle='#8fd3ff';hg.beginPath();hg.arc(270+JOY.x*28,226-JOY.y*28,4,0,7);hg.fill();hg.fillStyle='#9fb3ad';hg.font='11px Arial';hg.fillText('twist '+(JOY.w*100).toFixed(0)+'%',270,268);}
+  // minimap (north up, 120 m window)
+  const mx=760,my=200,R=150,sc=R/70; hg.save();hg.beginPath();hg.rect(mx-R,my-R,2*R,2*R);hg.clip();hg.fillStyle='#0f2a38';hg.fillRect(mx-R,my-R,2*R,2*R);
+  const tx=(x,z)=>[mx+(x-S.x)*sc,my+(z-S.z)*sc];
+  hg.fillStyle='#8a8478';for(const o of obstacles)if(o.type==='aabb'){const [a,b2]=tx(o.x0,o.z0),[c,d]=tx(o.x1,o.z1);hg.fillRect(a,b2,c-a,d-b2);}
+  hg.fillStyle='rgba(255,213,74,.5)';{const [a,b2]=tx(0,-63),[c,d]=tx(22,-60);hg.fillRect(a,b2,c-a,d-b2);}
+  gates.forEach(g=>{[[g.x-g.w/2,'#d42a2a'],[g.x+g.w/2,'#1f9a4a']].forEach(([x,cc])=>{const [a,b2]=tx(x,g.z);hg.fillStyle=g.passed?'#e6c31a':cc;hg.beginPath();hg.arc(a,b2,4,0,7);hg.fill();});});
+  {const [a,b2]=tx(SK.x,SK.z);hg.strokeStyle='#2fd39a';hg.lineWidth=2;hg.beginPath();hg.arc(a,b2,SK.r*sc,0,7);hg.stroke();}
+  {const [a,b2]=tx(PB.x-PB.s/2,PB.z-PB.s/2);hg.strokeStyle='#ffd54a';hg.strokeRect(a,b2,PB.s*sc,PB.s*sc);}
+  {const [a,b2]=tx(G41.x-5,G41.z-4);hg.fillStyle='rgba(255,213,74,.6)';hg.fillRect(a,b2,10*sc,8*sc);hg.fillStyle='#fff';hg.font='10px Arial';hg.fillText('G41',a,b2-3);}
+  // boat outline
+  hg.save();hg.translate(mx,my);hg.rotate(S.psi);hg.fillStyle='#fff';[[-HZ],[HZ]].forEach(([z])=>{hg.beginPath();hg.moveTo(-b*sc+z*sc,MID*sc*0);hg.rect((z-b)*sc,-MID*sc,2*b*sc,LOA*sc);hg.fill();});
+  hg.fillStyle='#d7e023';hg.fillRect(-1*sc,-1*sc,2*sc,3*sc);hg.restore();
+  // wind arrow
+  {hg.save();hg.translate(mx+R-22,my-R+22);hg.rotate(ENV.windDir*Math.PI/180);hg.strokeStyle='#8fd3ff';hg.lineWidth=3;hg.beginPath();hg.moveTo(0,-14);hg.lineTo(0,14);hg.lineTo(-5,8);hg.moveTo(0,14);hg.lineTo(5,8);hg.stroke();hg.restore();}
+  hg.restore();hg.strokeStyle='#2f9a77';hg.strokeRect(mx-R,my-R,2*R,2*R);
+  // scenario text
+  hg.textAlign='left';hg.fillStyle='#fff';hg.font='600 15px Arial';hg.fillText(`${scenario+1}. ${SCN[scenario].name}${S.paused?'  — PAUSED':''}`,450,50);
+  hg.fillStyle='#b7c8c2';hg.font='12px Arial';wrap(SCN[scenario].brief,450,70,150,15);
+  hg.fillStyle='#f3d27a';hg.font='13px Arial';hg.fillText(score.info||'',450,150);
+  if(score.msg){hg.fillStyle=score.done?'#2fd39a':'#ff7a6b';hg.font='700 15px Arial';wrap(score.msg,450,175,150,17);}
+  hg.fillStyle='#9fb3ad';hg.font='11px Arial';hg.fillText(`contacts ${score.hits} · max ${score.maxHit.toFixed(2)} m/s`,450,340);
+  if(AUTO){hg.fillStyle='rgba(31,107,82,0.85)';hg.fillRect(8,352,W-16,28);hg.fillStyle='#fff';hg.font='600 12px Arial';hg.fillText('AUTO · '+AU.msg,14,366);}
+  hudTex.needsUpdate=true;}
+function wrap(t,x,y,w,lh){const words=t.split(' ');let line='';for(const wd of words){const test=line+wd+' ';if(hg.measureText(test).width>w&&line){hg.fillText(line,x,y);line=wd+' ';y+=lh;}else line=test;}hg.fillText(line,x,y);}
+
+// ================================================================ CAMERAS
+const camNames=['helm','stern deck','chase','top-down'];
+function cycleCam(){camMode=(camMode+1)%camNames.length;document.getElementById('cam').textContent='Camera: '+camNames[camMode]; if(renderer.xr.isPresenting){const sp=VRSPOTS[camMode%VRSPOTS.length];rig.position.x=sp[0];rig.position.z=sp[1];}}
+document.getElementById('menuBtn').onclick=()=>document.body.classList.toggle('menu'); addEventListener('keydown',e=>{if(e.code==='Tab'){e.preventDefault();document.body.classList.toggle('menu');}});
+document.getElementById('cam').onclick=cycleCam; document.getElementById('rst').onclick=resetScenario;
+document.querySelectorAll('#sc button[data-s]').forEach(bn=>bn.onclick=()=>{scenario=+bn.dataset.s;resetScenario();});
+document.getElementById('wind').onchange=e=>ENV.wind=+e.target.value; document.getElementById('cur').onchange=e=>ENV.cur=+e.target.value; document.getElementById('windDir').onchange=e=>ENV.windDir=+e.target.value; document.getElementById('curDir').onchange=e=>ENV.curDir=+e.target.value; document.getElementById('disp').onchange=e=>setDisp(+e.target.value); document.getElementById('mode').onchange=e=>setMode(+e.target.value); document.getElementById('sea').onchange=e=>Hs=+e.target.value;
+let look={yaw:0,pitch:0},drag=null; canvas.addEventListener('pointerdown',e=>drag=[e.clientX,e.clientY]); canvas.addEventListener('pointerup',()=>drag=null);
+canvas.addEventListener('pointermove',e=>{if(!drag)return;look.yaw-=(e.clientX-drag[0])*0.005;look.pitch=Math.max(-1.2,Math.min(0.6,look.pitch-(e.clientY-drag[1])*0.005));drag=[e.clientX,e.clientY];});
+const VRSPOTS=[[8.0-MID,0],[2.3-MID,0],[4.0-MID,-HZ],[4.0-MID,HZ]]; // fwd platform, stern platform, port hull deck, stbd hull deck
+function placeCamera(){if(renderer.xr.isPresenting){rig.position.y=D+0.06;return;}
+  camera.position.set(0,0,0); camera.rotation.set(0,0,0);
+  if(camMode===0){camera.position.set(0,1.65,0);camera.rotation.order='YXZ';camera.rotation.y=look.yaw;camera.rotation.x=look.pitch;}
+  else if(camMode===1){camera.position.set(-6.0,1.7,0);camera.rotation.order='YXZ';camera.rotation.y=Math.PI+look.yaw;camera.rotation.x=look.pitch;}
+  else if(camMode===2){camera.position.set(-16*Math.cos(look.yaw),8,16*Math.sin(look.yaw));camera.lookAt(rig.localToWorld(new THREE.Vector3(2,-1,0)));}
+  else {camera.position.set(0,60,0);camera.lookAt(rig.localToWorld(new THREE.Vector3(0,0,0)));camera.rotation.z=-Math.PI/2;} }
+function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();} addEventListener('resize',resize); resize();
+
+// ================================================================ LOOP
+resetScenario(); let last=null, hudT=0;
+renderer.setAnimationLoop((now)=>{const dtw=last===null?0:Math.min(0.05,(now-last)/1000); last=now;
+  xrInput(dtw); if(!xrActive&&!AUTO)keyboard(dtw); if(!AUTO&&MODE===1)joyAlloc(JOY.x,JOY.y,JOY.w); if(!AUTO&&MODE===2)positionHold(); if(AUTO&&!S.paused&&dtw>0)autopilot(dtw);
+  if(!S.paused&&dtw>0){const sub=4;for(let i=0;i<sub;i++)step(dtw/sub);scoring(dtw);}
+  // pose boat: position, heading, wave heave/pitch/roll (quasi-static)
+  const t=S.t; const eAft=eta(S.x-5*fwdDir()[0],S.z-5*fwdDir()[1],t), eFwd=eta(S.x+5*fwdDir()[0],S.z+5*fwdDir()[1],t), eP=eta(S.x-2.2*stbdDir()[0],S.z-2.2*stbdDir()[1],t), eS=eta(S.x+2.2*stbdDir()[0],S.z+2.2*stbdDir()[1],t);
+  const heave=(eAft+eFwd)/2, pitch=Math.atan((eFwd-eAft)/10), roll=Math.atan((eS-eP)/4.4);
+  boat.position.set(S.x,-DR+heave-(Math.abs(S.u)/UMAX)*0.08,S.z); boat.rotation.order='YZX'; boat.rotation.y=Math.PI/2-S.psi; boat.rotation.z=pitch+ (S.u/UMAX)*0.02; boat.rotation.x=roll-S.r*0.15;
+  nozzles.forEach((nz,i)=>{nz.rotation.y=-S.noz; const th=i===0?S.thrP:S.thrS; nz.userData.bucket.position.y=th<-0.05?-0.05:0.28;});
+  // foam
+  if(dtw>0){const f=fwdDir(),s=stbdDir();[[S.thrP,-YJ],[S.thrS,YJ]].forEach(([th,yj])=>{if(Math.abs(th)>0.05&&Math.random()<Math.abs(th)*0.9){const wx=S.x+XJ*f[0]+yj*s[0],wz=S.z+XJ*f[1]+yj*s[1];const dir=th>0?-1:1;spawnFoam(wx,wz,dir*3*f[0]*Math.abs(th)+S.u*f[0]*0.3,dir*3*f[1]*Math.abs(th)+S.u*f[1]*0.3,Math.abs(th));}});
+    for(const fo of FOAM){if(fo.life>0){fo.life-=dtw*0.5;fo.sp.position.x+=fo.vx*dtw;fo.sp.position.z+=fo.vz*dtw;fo.sp.material.opacity=Math.max(0,fo.life)*0.7*fo.str;fo.sp.scale.setScalar(2+(1-fo.life)*4);}}}
+  updateSea(t,S.x,S.z); placeCamera();
+  hudT+=dtw; if(hudT>0.1){hudT=0;drawHUD();}
+  renderer.render(scene,camera);});
+</script>
+</body>
+</html>
